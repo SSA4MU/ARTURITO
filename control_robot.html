@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consola de mando · Robot HC-05</title>
+<style>
+  :root {
+    --bg: #14171a;
+    --panel: #1c2024;
+    --panel-raised: #23282d;
+    --grid-line: #262b30;
+    --amber: #ffb020;
+    --amber-dim: #8a5f16;
+    --text: #e8e6e1;
+    --text-dim: #7c8288;
+    --green: #4ad991;
+    --red: #ff5c5c;
+    --mono: "SFMono-Regular", "JetBrains Mono", Consolas, monospace;
+    --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior: none;
+  }
+
+  body {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .console {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border: 1px solid #2c3238;
+    border-radius: 18px;
+    padding: 22px 22px 28px;
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    color: var(--amber);
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 30px;
+    letter-spacing: 0.02em;
+    margin: 2px 0 18px;
+    color: var(--text);
+    text-transform: uppercase;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--panel-raised);
+    border: 1px solid #2c3238;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 18px;
+  }
+
+  .status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+
+  .status-dot.connected {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+  }
+
+  .status-dot.error {
+    background: var(--red);
+    box-shadow: 0 0 8px var(--red);
+  }
+
+  .status-text {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .status-text.connected { color: var(--text); }
+
+  #connectBtn {
+    width: 100%;
+    padding: 13px;
+    background: var(--amber);
+    color: #1a1300;
+    border: none;
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-bottom: 22px;
+    transition: transform 0.08s, background 0.15s;
+  }
+
+  #connectBtn:active { transform: scale(0.98); }
+
+  #connectBtn.connected {
+    background: var(--panel-raised);
+    color: var(--green);
+    border: 1px solid var(--green);
+  }
+
+  #connectBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .dpad {
+    display: grid;
+    grid-template-columns: 76px 76px 76px;
+    grid-template-rows: 76px 76px 76px;
+    gap: 8px;
+    justify-content: center;
+    margin: 0 auto 22px;
+  }
+
+  .dpad-btn {
+    background: var(--panel-raised);
+    border: 1px solid #2c3238;
+    border-radius: 12px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: none;
+    transition: background 0.06s, transform 0.06s, color 0.06s, box-shadow 0.06s;
+    box-shadow: 0 3px 0 #14171a, inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+
+  .dpad-btn:not(.disabled):hover { color: var(--text); }
+
+  .dpad-btn.active {
+    background: var(--amber-dim);
+    color: var(--amber);
+    transform: translateY(3px);
+    box-shadow: 0 0 0 #14171a, inset 0 2px 6px rgba(0,0,0,0.4);
+  }
+
+  .pos-up    { grid-column: 2; grid-row: 1; }
+  .pos-left  { grid-column: 1; grid-row: 2; }
+  .pos-stop  { grid-column: 2; grid-row: 2; font-size: 11px; letter-spacing: 0.08em; color: var(--red); border-color: #4a2222; }
+  .pos-right { grid-column: 3; grid-row: 2; }
+  .pos-down  { grid-column: 2; grid-row: 3; }
+
+  .power-label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .power-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .power-btn {
+    background: var(--panel-raised);
+    border: 1px solid #2c3238;
+    border-radius: 10px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 12px 0;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+  }
+
+  .power-btn.selected {
+    background: var(--amber-dim);
+    color: var(--amber);
+    border-color: var(--amber);
+  }
+
+  .hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  .hint strong { color: var(--text); }
+
+  footer {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--grid-line);
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+
+<main class="console">
+  <header>
+    <span class="eyebrow">WEB SERIAL · HC-05</span>
+  </header>
+  <h1>Consola de mando</h1>
+
+  <div class="status-bar">
+    <span class="status-dot" id="statusDot"></span>
+    <span class="status-text" id="statusText">Sin conectar</span>
+  </div>
+
+  <button id="connectBtn">Conectar robot</button>
+
+  <div class="dpad">
+    <button class="dpad-btn pos-up"    data-cmd="w">▲</button>
+    <button class="dpad-btn pos-left"  data-cmd="a">◀</button>
+    <button class="dpad-btn pos-stop"  data-tap-cmd="q">STOP</button>
+    <button class="dpad-btn pos-right" data-cmd="d">▶</button>
+    <button class="dpad-btn pos-down"  data-cmd="s">▼</button>
+  </div>
+
+  <p class="power-label">Potencia</p>
+  <div class="power-row">
+    <button class="power-btn selected" data-power="1">Bajo</button>
+    <button class="power-btn" data-power="2">Medio</button>
+    <button class="power-btn" data-power="3">Alto</button>
+  </div>
+
+  <p class="hint"><strong>Mantén presionado</strong> para moverte.<br>Al soltar, el robot se detiene solo.</p>
+
+  <footer>
+    <span id="lastCmd">— </span>
+    <span>9600 BAUD</span>
+  </footer>
+</main>
+
+<script>
+  const connectBtn  = document.getElementById('connectBtn');
+  const statusDot   = document.getElementById('statusDot');
+  const statusText  = document.getElementById('statusText');
+  const lastCmdEl   = document.getElementById('lastCmd');
+  const dpadButtons = document.querySelectorAll('.dpad-btn[data-cmd]');
+  const stopButton  = document.querySelector('.dpad-btn[data-tap-cmd]');
+  const powerButtons = document.querySelectorAll('.power-btn');
+
+  let port = null;
+  let writer = null;
+  let activeCmd = null;
+
+  function setStatus(state, message) {
+    statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+    statusText.className = 'status-text' + (state === 'connected' ? ' connected' : '');
+    statusText.textContent = message;
+  }
+
+  function setConnectedUI(connected) {
+    connectBtn.classList.toggle('connected', connected);
+    connectBtn.textContent = connected ? 'Conectado ✓ (tocar para desconectar)' : 'Conectar robot';
+  }
+
+  async function connect() {
+    try {
+      connectBtn.disabled = true;
+      setStatus(null, 'Elige el puerto del HC-05…');
+
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 9600 });
+      writer = port.writable.getWriter();
+
+      port.addEventListener('disconnect', onDisconnected);
+
+      setStatus('connected', 'Conectado al robot');
+      setConnectedUI(true);
+    } catch (err) {
+      console.error(err);
+      setStatus('error', 'No se pudo conectar: ' + err.message);
+      setConnectedUI(false);
+      port = null;
+    } finally {
+      connectBtn.disabled = false;
+    }
+  }
+
+  async function disconnect() {
+    try {
+      if (writer) {
+        await writer.close();
+        writer = null;
+      }
+      if (port) {
+        await port.close();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    onDisconnected();
+  }
+
+  function onDisconnected() {
+    port = null;
+    writer = null;
+    setStatus(null, 'Desconectado');
+    setConnectedUI(false);
+  }
+
+  async function sendCommand(cmd) {
+    if (!writer) return;
+    try {
+      const bytes = new TextEncoder().encode(cmd);
+      await writer.write(bytes);
+      lastCmdEl.textContent = 'Enviado: ' + cmd.toUpperCase();
+    } catch (err) {
+      console.error('Error enviando comando:', err);
+    }
+  }
+
+  connectBtn.addEventListener('click', () => {
+    if (port) {
+      disconnect();
+    } else {
+      connect();
+    }
+  });
+
+  function pressStart(btn) {
+    const cmd = btn.dataset.cmd;
+    if (!cmd || activeCmd === cmd) return;
+    activeCmd = cmd;
+    btn.classList.add('active');
+    sendCommand(cmd);
+  }
+
+  function pressEnd(btn) {
+    const cmd = btn.dataset.cmd;
+    if (activeCmd !== cmd) return;
+    activeCmd = null;
+    btn.classList.remove('active');
+    sendCommand('q'); // soltar = detener
+  }
+
+  dpadButtons.forEach(btn => {
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); pressStart(btn); });
+    btn.addEventListener('pointerup',   () => { pressEnd(btn); });
+    btn.addEventListener('pointercancel', () => { pressEnd(btn); });
+    btn.addEventListener('pointerleave', (e) => { if (e.buttons > 0) pressEnd(btn); });
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  });
+
+  // STOP es un toque normal, no de mantener presionado
+  stopButton.addEventListener('click', () => sendCommand(stopButton.dataset.tapCmd));
+
+  // Botones de potencia: toque normal, marcan cuál está activo
+  powerButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      powerButtons.forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      sendCommand(btn.dataset.power);
+    });
+  });
+
+  if (!('serial' in navigator)) {
+    setStatus('error', 'Este navegador no soporta Web Serial (usa Chrome o Edge en PC)');
+    connectBtn.disabled = true;
+  }
+</script>
+
+</body>
+</html>
