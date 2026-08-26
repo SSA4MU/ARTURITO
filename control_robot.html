@@ -185,9 +185,34 @@
 
   .pos-up    { grid-column: 2; grid-row: 1; }
   .pos-left  { grid-column: 1; grid-row: 2; }
-  .pos-stop  { grid-column: 2; grid-row: 2; font-size: 11px; letter-spacing: 0.08em; color: var(--red); border-color: #4a2222; }
+  .pos-toggle { grid-column: 2; grid-row: 2; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; }
   .pos-right { grid-column: 3; grid-row: 2; }
   .pos-down  { grid-column: 2; grid-row: 3; }
+
+  /* Botón de alternar despertar/dormir: color según qué acción hace */
+  .pos-toggle.wake-mode {
+    color: var(--amber);
+    border-color: var(--amber-dim);
+    background: rgba(255, 176, 32, 0.08);
+  }
+
+  .pos-toggle.sleep-mode {
+    color: var(--text-dim);
+    border-color: #2c3238;
+  }
+
+  /* Direcciones y potencia se atenúan mientras el robot está dormido,
+     porque el firmware las va a ignorar hasta que se lo despierte. */
+  .dpad-btn.disabled {
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  .power-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
 
   .power-label {
     font-size: 11px;
@@ -264,7 +289,7 @@
   <div class="dpad">
     <button class="dpad-btn pos-up"    data-cmd="w">▲</button>
     <button class="dpad-btn pos-left"  data-cmd="a">◀</button>
-    <button class="dpad-btn pos-stop"  data-tap-cmd="q">STOP</button>
+    <button class="dpad-btn pos-toggle wake-mode" id="toggleBtn">DESPERTAR</button>
     <button class="dpad-btn pos-right" data-cmd="d">▶</button>
     <button class="dpad-btn pos-down"  data-cmd="s">▼</button>
   </div>
@@ -276,7 +301,7 @@
     <button class="power-btn" data-power="3">Alto</button>
   </div>
 
-  <p class="hint"><strong>Mantén presionado</strong> para moverte.<br>Al soltar, el robot se detiene solo.</p>
+  <p class="hint"><strong>Mantén presionado</strong> para moverte.<br>Al soltar, el robot se detiene solo.<br>Dormido, el robot <strong>ignora todos los controles</strong>.</p>
 
   <footer>
     <span id="lastCmd">— </span>
@@ -290,12 +315,17 @@
   const statusText  = document.getElementById('statusText');
   const lastCmdEl   = document.getElementById('lastCmd');
   const dpadButtons = document.querySelectorAll('.dpad-btn[data-cmd]');
-  const stopButton  = document.querySelector('.dpad-btn[data-tap-cmd]');
+  const toggleBtn   = document.getElementById('toggleBtn');
   const powerButtons = document.querySelectorAll('.power-btn');
 
   let port = null;
   let writer = null;
   let activeCmd = null;
+
+  // Refleja en la UI el estado que el firmware arranca por defecto: dormido.
+  // Es un estado optimista (no hay confirmación del robot por Web Serial),
+  // se actualiza cada vez que tocamos el botón.
+  let isAwake = false;
 
   function setStatus(state, message) {
     statusDot.className = 'status-dot' + (state ? ' ' + state : '');
@@ -306,6 +336,17 @@
   function setConnectedUI(connected) {
     connectBtn.classList.toggle('connected', connected);
     connectBtn.textContent = connected ? 'Conectado ✓ (tocar para desconectar)' : 'Conectar robot';
+  }
+
+  // Actualiza el botón de toggle y atenúa dirección/potencia cuando
+  // el robot está dormido, ya que el firmware las va a ignorar igual.
+  function updateAwakeUI() {
+    toggleBtn.textContent = isAwake ? 'DORMIR' : 'DESPERTAR';
+    toggleBtn.classList.toggle('wake-mode', !isAwake);
+    toggleBtn.classList.toggle('sleep-mode', isAwake);
+
+    dpadButtons.forEach(btn => btn.classList.toggle('disabled', !isAwake));
+    powerButtons.forEach(btn => { btn.disabled = !isAwake; });
   }
 
   async function connect() {
@@ -321,6 +362,8 @@
 
       setStatus('connected', 'Conectado al robot');
       setConnectedUI(true);
+      isAwake = false; // el firmware siempre arranca dormido
+      updateAwakeUI();
     } catch (err) {
       console.error(err);
       setStatus('error', 'No se pudo conectar: ' + err.message);
@@ -373,6 +416,7 @@
   });
 
   function pressStart(btn) {
+    if (btn.classList.contains('disabled')) return; // robot dormido: no manda nada
     const cmd = btn.dataset.cmd;
     if (!cmd || activeCmd === cmd) return;
     activeCmd = cmd;
@@ -396,12 +440,20 @@
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
   });
 
-  // STOP es un toque normal, no de mantener presionado
-  stopButton.addEventListener('click', () => sendCommand(stopButton.dataset.tapCmd));
+  // Despertar/Dormir es un toque normal (toggle), no de mantener presionado.
+  // Este comando se manda siempre, incluso si ahora mismo "isAwake" es false,
+  // porque es el único que el firmware procesa estando dormido.
+  toggleBtn.addEventListener('click', () => {
+    isAwake = !isAwake;
+    sendCommand('z');
+    updateAwakeUI();
+  });
 
-  // Botones de potencia: toque normal, marcan cuál está activo
+  // Botones de potencia: toque normal, marcan cuál está activo.
+  // Deshabilitados por CSS/atributo mientras el robot está dormido.
   powerButtons.forEach(btn => {
     btn.addEventListener('click', () => {
+      if (btn.disabled) return;
       powerButtons.forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       sendCommand(btn.dataset.power);
@@ -412,6 +464,8 @@
     setStatus('error', 'Este navegador no soporta Web Serial (usa Chrome o Edge en PC)');
     connectBtn.disabled = true;
   }
+
+  updateAwakeUI(); // estado inicial de la UI: dormido, igual que el firmware
 </script>
 
 </body>

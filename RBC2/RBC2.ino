@@ -2,10 +2,21 @@
 // CONTROLES
 //   w = avanzar     s = retroceder
 //   a = izquierda   d = derecha
-//   q / espacio     = parar
+//   q / espacio     = parar motores
+//   z               = alternar despertar/dormir
 //   1 = potencia baja    2 = potencia media    3 = potencia alta
-
-
+// Los 3 niveles de potencia son valores fijos y acotados (no un
+// control continuo) para proteger motores pensados para ~6.5V.
+//
+// Mientras el robot está DORMIDO, se ignora cualquier comando que no
+// sea 'z' (ni movimiento, ni cambios de potencia), y la pantalla
+// muestra la animación de ojos cerrados.
+//
+// Archivos de este sketch:
+//   - robot_completo.ino   (este archivo)
+//   - display_wrapper.h
+//   - config.h
+// =======================================================
 
 #include <SoftwareSerial.h>
 #include "display_wrapper.h" 
@@ -15,16 +26,22 @@ const int BT_RX_PIN = 11; // conectado al TXD del módulo Bluetooth
 const int BT_TX_PIN = 12; // conectado al RXD del módulo Bluetooth
 SoftwareSerial bluetooth(BT_RX_PIN, BT_TX_PIN);
 
-// --------------------- MOTORES---------------------
+// --------------------- MOTORES (L298N) con PWM ---------------------
 const int IN1 = 6; // Motor A adelante
 const int IN2 = 5; // Motor A atrás
 const int IN3 = 4; // Motor B adelante
 const int IN4 = 3; // Motor B atrás
 
 // ENA/ENB deben ir en pines PWM (~).
-const int ENA = 9; 
-const int ENB = 10; 
+const int ENA = 9;  // Habilita y da velocidad al Motor A
+const int ENB = 10; // Habilita y da velocidad al Motor B
 
+// Velocidad seleccionable en 3 niveles fijos, para no exceder lo
+// que soportan motores pensados para ~6.5V (con la fuente a 12V):
+//   BAJO  ('1'): duty ~35% -> ~4.2V
+//   MEDIO ('2'): duty ~54% -> ~6.5V (nivel por defecto al encender)
+//   ALTO  ('3'): duty ~69% -> ~8.2V (úsalo con cuidado, por encima
+//                del voltaje nominal del motor)
 const uint8_t VELOCIDAD_BAJA  = 90;
 const uint8_t VELOCIDAD_MEDIA = 138;
 const uint8_t VELOCIDAD_ALTA  = 150;
@@ -33,6 +50,9 @@ uint8_t velocidad_actual = VELOCIDAD_MEDIA;
 
 char dato;
 
+// Estado despierto/dormido (debe ir ANTES de cualquier función: el
+// IDE de Arduino genera los prototipos de función antes de la
+// primera función del archivo, y en ese punto este tipo ya debe existir)
 enum Estado {
   ESTADO_DESPIERTO,
   ESTADO_DORMIDO
@@ -52,8 +72,6 @@ void avanzar()
   digitalWrite(IN2, HIGH);
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, HIGH);
-
-  despertar();
 }
 
 void retroceder()
@@ -62,8 +80,6 @@ void retroceder()
   digitalWrite(IN2, LOW);
   digitalWrite(IN3, HIGH);
   digitalWrite(IN4, LOW);
-
-  despertar();
 }
 
 void girar_izquierda()
@@ -72,8 +88,6 @@ void girar_izquierda()
   digitalWrite(IN2, LOW);
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, HIGH);
-
-  despertar();
 }
 
 void girar_derecha()
@@ -82,20 +96,32 @@ void girar_derecha()
   digitalWrite(IN2, HIGH);
   digitalWrite(IN3, HIGH);
   digitalWrite(IN4, LOW);
-
-  despertar();
 }
 
-void parar()
+// Solo apaga los motores. Ya no toca el estado despierto/dormido:
+// eso ahora lo maneja exclusivamente el botón de alternar (comando 'z').
+void parar_motores()
 {
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, LOW);
   digitalWrite(IN3, LOW);
   digitalWrite(IN4, LOW);
-
-  dormir();
 }
 
+// Alterna entre despierto y dormido. Es el único comando que se
+// procesa sin importar el estado actual (si no, nunca se podría
+// despertar al robot).
+void alternar_estado()
+{
+  if (estado_actual == ESTADO_DESPIERTO)
+  {
+    dormir();
+  }
+  else
+  {
+    despertar();
+  }
+}
 
 void manejar_control()
 {
@@ -111,8 +137,18 @@ void manejar_control()
   }
   else
   {
-    return; 
+    return; // no llegó nada, no hacer nada más
   }
+
+  // El toggle de despertar/dormir siempre se procesa.
+  if (dato == 'z' || dato == 'Z')
+  {
+    alternar_estado();
+    return;
+  }
+
+  // Todo lo demás se ignora por completo si el robot está dormido.
+  if (estado_actual != ESTADO_DESPIERTO) return;
 
   switch (dato)
   {
@@ -122,7 +158,7 @@ void manejar_control()
     case 'd': girar_derecha(); break;
     case 'q':
     case 'Q':
-    case ' ': parar(); break;
+    case ' ': parar_motores(); break;
     case '1': velocidad_actual = VELOCIDAD_BAJA;  aplicar_velocidad(); break;
     case '2': velocidad_actual = VELOCIDAD_MEDIA; aplicar_velocidad(); break;
     case '3': velocidad_actual = VELOCIDAD_ALTA;  aplicar_velocidad(); break;
@@ -149,7 +185,7 @@ int corner_radius = REF_CORNER_RADIUS;
 unsigned long next_blink_time = 0;
 unsigned long next_move_time = 0;
 
-// --- Máquina de estados de la animación ---
+// --- Máquina de estados de la animación (sin delay()) ---
 enum AnimState {
   ANIM_IDLE,
   ANIM_BLINK_CLOSING,
@@ -228,9 +264,11 @@ void reset_eyes(bool update = true)
   if (update) draw_frame();
 }
 
-
+// Duerme al robot: cancela cualquier animación en curso y dibuja
+// los ojos cerrados de inmediato.
 void dormir()
 {
+  parar_motores(); // seguridad: nunca debe quedar andando estando "dormido"
   estado_actual = ESTADO_DORMIDO;
   anim_state = ANIM_IDLE;
   draw_frame();
@@ -240,7 +278,8 @@ void dormir()
 // parpadeo/mirada para que no ocurran de inmediato.
 void despertar()
 {
-  if (estado_actual == ESTADO_DESPIERTO) return; 
+  if (estado_actual == ESTADO_DESPIERTO) return; // ya estaba despierto, no hacer nada
+
   estado_actual = ESTADO_DESPIERTO;
   reset_eyes();
   next_blink_time = millis() + random(2000, 5000);
@@ -250,7 +289,7 @@ void despertar()
 // Inicia un parpadeo si no hay otra animación en curso
 void start_blink()
 {
-  if (anim_state != ANIM_IDLE) return; 
+  if (anim_state != ANIM_IDLE) return; // ya está animando algo, se reintentará luego
 
   anim_state = ANIM_BLINK_CLOSING;
   anim_step = 0;
@@ -373,7 +412,7 @@ void setup()
   randomSeed(analogRead(A0));
 
   aplicar_velocidad(); // fija la velocidad inicial en ENA/ENB
-  parar();              // arrancar siempre en estado seguro (detenido y dormido)
+  dormir();             // arrancar siempre en estado seguro (motores parados y dormido)
 }
 
 void loop()
