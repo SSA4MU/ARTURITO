@@ -2,29 +2,19 @@
 // CONTROLES
 //   w = avanzar     s = retroceder
 //   a = izquierda   d = derecha
-//   q / espacio     = parar motores
-//   z               = alternar despertar/dormir
+//   q / espacio = parar motores
+//   z = despertar/dormir
 //   1 = potencia baja    2 = potencia media    3 = potencia alta
-// Los 3 niveles de potencia son valores fijos y acotados (no un
-// control continuo) para proteger motores pensados para ~6.5V.
 //
 // Mientras el robot está DORMIDO, se ignora cualquier comando que no
 // sea 'z' (ni movimiento, ni cambios de potencia), y la pantalla
 // muestra la animación de ojos cerrados.
-//
-// Archivos de este sketch:
-//   - robot_completo.ino   (este archivo)
-//   - display_wrapper.h
-//   - config.h
-// =======================================================
-
 #include <SoftwareSerial.h>
 #include "display_wrapper.h" 
 
 // --------------------- BLUETOOTH ---------------------
-const int BT_RX_PIN = 11; // conectado al TXD del módulo Bluetooth
-const int BT_TX_PIN = 12; // conectado al RXD del módulo Bluetooth
-SoftwareSerial bluetooth(BT_RX_PIN, BT_TX_PIN);
+
+SoftwareSerial bluetooth(12, 11);
 
 // --------------------- MOTORES (L298N) con PWM ---------------------
 const int IN1 = 6; // Motor A adelante
@@ -32,7 +22,7 @@ const int IN2 = 5; // Motor A atrás
 const int IN3 = 4; // Motor B adelante
 const int IN4 = 3; // Motor B atrás
 
-// ENA/ENB deben ir en pines PWM (~).
+
 const int ENA = 9;  // Habilita y da velocidad al Motor A
 const int ENB = 10; // Habilita y da velocidad al Motor B
 
@@ -50,9 +40,6 @@ uint8_t velocidad_actual = VELOCIDAD_MEDIA;
 
 char dato;
 
-// Estado despierto/dormido (debe ir ANTES de cualquier función: el
-// IDE de Arduino genera los prototipos de función antes de la
-// primera función del archivo, y en ese punto este tipo ya debe existir)
 enum Estado {
   ESTADO_DESPIERTO,
   ESTADO_DORMIDO
@@ -108,9 +95,7 @@ void parar_motores()
   digitalWrite(IN4, LOW);
 }
 
-// Alterna entre despierto y dormido. Es el único comando que se
-// procesa sin importar el estado actual (si no, nunca se podría
-// despertar al robot).
+// Alterna entre despierto y dormido
 void alternar_estado()
 {
   if (estado_actual == ESTADO_DESPIERTO)
@@ -137,10 +122,9 @@ void manejar_control()
   }
   else
   {
-    return; // no llegó nada, no hacer nada más
+    return; 
   }
 
-  // El toggle de despertar/dormir siempre se procesa.
   if (dato == 'z' || dato == 'Z')
   {
     alternar_estado();
@@ -399,7 +383,7 @@ void update_animation()
 void setup()
 {
   Serial.begin(9600);
-  bluetooth.begin(9600); // la mayoría de módulos HC-05/HC-06 vienen así de fábrica
+  bluetooth.begin(9600);
 
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
@@ -417,10 +401,9 @@ void setup()
 
 void loop()
 {
-  // 1) Motores: se revisa en cada vuelta, nunca se bloquea
   manejar_control();
 
-  // 2) Animación de ojos: máquina de estados, tampoco bloquea
+
   unsigned long now = millis();
 
   if (estado_actual == ESTADO_DESPIERTO)
@@ -440,7 +423,7 @@ void loop()
       }
       else
       {
-        // no hubo movimiento real, reprograma para no reintentar en bucle
+
         next_move_time = millis() + random(3000, 8000);
       }
     }
